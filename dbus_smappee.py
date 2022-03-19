@@ -74,7 +74,7 @@ class Meter(object):
 
     def update(self, voltages, powers):
         self.set_path('/Ac/Power', d['power']/10)
-        self.set_path('/Ac/Energy/Forward', d['power']/1000)
+        self.set_path('/Ac/Energy/Forward', d['energy']/1000)
         self.set_path('/Ac/Current', d['current']/10)
         self.set_path('/Ac/Voltage', d['voltage']/10)
 	self.set_path('/Ac/frequency', d['frequency']/10)
@@ -101,7 +101,7 @@ class Bridge(MqttGObjectBridge):
             return
 
     def _on_connect(self, client, userdata, di, rc):
-        self._client.subscribe('servicelocation/+/realtime', 0)
+        self._client.subscribe('pzem', 0)
 
 def main():
     parser = ArgumentParser(description=sys.argv[0])

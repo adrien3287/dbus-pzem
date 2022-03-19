@@ -48,34 +48,22 @@ class Meter(object):
         service.add_path('/Management/Connection', host)
         service.add_path('/DeviceInstance', instance)
         service.add_path('/ProductId', 0xFFFF) # 0xB012 ?
-        service.add_path('/ProductName', "Smappee - {}".format(name))
+        service.add_path('/ProductName', "PZEM - {}".format(name))
         service.add_path('/FirmwareVersion', None)
         service.add_path('/Serial', None)
         service.add_path('/Connected', 1)
 
-        _kwh = lambda p, v: (str(v) + 'KWh')
+        _kwh = lambda p, v: (str(v) + 'kWh')
         _a = lambda p, v: (str(v) + 'A')
         _w = lambda p, v: (str(v) + 'W')
         _v = lambda p, v: (str(v) + 'V')
+	_hz = lambda p, v: (str(v) + 'Hz')
 
         service.add_path('/Ac/Energy/Forward', None, gettextcallback=_kwh)
-        service.add_path('/Ac/Energy/Reverse', None, gettextcallback=_kwh)
-        service.add_path('/Ac/L1/Current', None, gettextcallback=_a)
-        service.add_path('/Ac/L1/Energy/Forward', None, gettextcallback=_kwh)
-        service.add_path('/Ac/L1/Energy/Reverse', None, gettextcallback=_kwh)
-        service.add_path('/Ac/L1/Power', None, gettextcallback=_w)
-        service.add_path('/Ac/L1/Voltage', None, gettextcallback=_v)
-        service.add_path('/Ac/L2/Current', None, gettextcallback=_a)
-        service.add_path('/Ac/L2/Energy/Forward', None, gettextcallback=_kwh)
-        service.add_path('/Ac/L2/Energy/Reverse', None, gettextcallback=_kwh)
-        service.add_path('/Ac/L2/Power', None, gettextcallback=_w)
-        service.add_path('/Ac/L2/Voltage', None, gettextcallback=_v)
-        service.add_path('/Ac/L3/Current', None, gettextcallback=_a)
-        service.add_path('/Ac/L3/Energy/Forward', None, gettextcallback=_kwh)
-        service.add_path('/Ac/L3/Energy/Reverse', None, gettextcallback=_kwh)
-        service.add_path('/Ac/L3/Power', None, gettextcallback=_w)
-        service.add_path('/Ac/L3/Voltage', None, gettextcallback=_v)
+        service.add_path('/Ac/Current', None, gettextcallback=_a)
+        service.add_path('/Ac/Voltage', None, gettextcallback=_v)
         service.add_path('/Ac/Power', None, gettextcallback=_w)
+        service.add_path('/Ac/Frequency', None, gettextcallback=_hz)
 
         # Provide debug info about what cts make up what meter
         service.add_path('/Debug/Cts', ','.join(str(c) for c in cts))
@@ -86,25 +74,16 @@ class Meter(object):
 
     def update(self, voltages, powers):
         totalpower = totalforward = totalreverse = 0
-        for phase, ct in izip(count(), self.cts):
-            # Fill in the values
-            d = powers[ct]
-            line = '/Ac/L{}'.format(phase+1)
-            self.set_path('{}/Current'.format(line), d['current'])
-            self.set_path('{}/Energy/Forward'.format(line), round(d['importEnergy']/3600000, 1))
-            self.set_path('{}/Energy/Reverse'.format(line), round(d['exportEnergy']/3600000, 1))
-            self.set_path('{}/Power'.format(line), d['power'])
-            self.set_path('{}/Voltage'.format(line), voltages.get(phase, None))
+        totalpower += d['power']
+        totalforward += d['importEnergy']
 
-            totalpower += d['power']
-            totalforward += d['importEnergy']
-            totalreverse += d['exportEnergy']
-
-        # Update the totals
         self.set_path('/Ac/Power', totalpower)
         self.set_path('/Ac/Energy/Forward', round(totalforward/3600000, 1))
-        self.set_path('/Ac/Energy/Reverse', round(totalreverse/3600000, 1))
-
+        self.set_path('/Ac/Current', d['current'])
+        self.set_path('/Ac/Voltage', d['voltage']
+	self.set_path('/Ac/frequency', d['frequency']
+	
+	
     def __repr__(self):
         return self.__class__.__name__ + "(" + str(self.cts) + ")"
 
@@ -118,64 +97,12 @@ class Bridge(MqttGObjectBridge):
         self.host = host
         self.meters = []
 
-    def _allocate_meters(self, name, channels, n, base2, instance_offset):
-        """ Allocates up to n meters from channels, attempting
-            to make three-phase meters. """
-        meters = []
-        phases = {i: [] for i in range(3)}
-        for phase, _channels in groupby(channels, lambda x: x['phase']):
-            phases[phase].extend(_channels)
-
-        spread = izip_longest(phases[0], phases[1], phases[2])
-        for c, phasedata in izip(count(), spread):
-            # stop when we have enough
-            if n is not None and c >= n: break
-
-            # Current sensors that makes up this meter
-            ids = [x['ctInput'] for x in phasedata]
-            meters.append(Meter(name, self.host,
-                '{}.{}'.format(self.base, base2), c+instance_offset, ids))
-
-        return meters
-
     def _on_message(self, client, userdata, msg):
         try:
             data = json.loads(msg.payload)
         except ValueError:
             logger.warning('Malformed payload received')
             return
-
-        # Channel config.
-        if msg.topic.endswith('/channelConfig'):
-            # Construct meter objects
-            channels = data['inputChannels']
-            consumption_channels = [c for c in channels \
-                if c['inputChannelType'] == 'CONSUMPTION']
-            production_channels = [c for c in channels \
-                if c['inputChannelType'] == 'PRODUCTION']
-
-            # Use DeviceInstance values from 50 up.
-            self.meters = self._allocate_meters('Consumption',
-                consumption_channels, 1, "grid", 50)
-            self.meters.extend(
-                self._allocate_meters('Production',
-                    production_channels, None, "pvinverter", 51))
-
-            return
-
-        if msg.topic.endswith('/realtime'):
-            # Index the voltage by phase, and the powers by CT. Pass it
-            # to each meter so the meter can pick its values from the
-            # dictionary.
-            voltages = dict((d['phaseId'], d['voltage']) for d in data['voltages'])
-            powers = dict((d['ctInput'], d) for d in data['channelPowers'])
-            for meter in self.meters:
-                meter.update(voltages, powers)
-
-            # Update the firmware and serial on each meter
-            for meter in self.meters:
-                meter.set_path('/FirmwareVersion', data.get('firmwareVersion'))
-                meter.set_path('/Serial', data.get('serialNr'))
 
     def _on_connect(self, client, userdata, di, rc):
         self._client.subscribe('servicelocation/+/realtime', 0)

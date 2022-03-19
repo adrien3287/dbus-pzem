@@ -73,15 +73,11 @@ class Meter(object):
             self.service[path] = value
 
     def update(self, voltages, powers):
-        totalpower = totalforward = totalreverse = 0
-        totalpower += d['power']
-        totalforward += d['importEnergy']
-
-        self.set_path('/Ac/Power', totalpower)
-        self.set_path('/Ac/Energy/Forward', round(totalforward/3600000, 1))
-        self.set_path('/Ac/Current', d['current'])
-        self.set_path('/Ac/Voltage', d['voltage']
-	self.set_path('/Ac/frequency', d['frequency']
+        self.set_path('/Ac/Power', d['power']/10)
+        self.set_path('/Ac/Energy/Forward', d['power']/1000)
+        self.set_path('/Ac/Current', d['current']/10)
+        self.set_path('/Ac/Voltage', d['voltage']/10)
+	self.set_path('/Ac/frequency', d['frequency']/10)
 	
 	
     def __repr__(self):

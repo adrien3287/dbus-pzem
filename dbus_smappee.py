@@ -48,7 +48,7 @@ class Meter(object):
         service.add_path('/Management/Connection', host)
         service.add_path('/DeviceInstance', instance)
         service.add_path('/ProductId', 0xFFFF) # 0xB012 ?
-        service.add_path('/ProductName', "PZEM - {}".format(name))
+        service.add_path('/ProductName', "PZEM"
         service.add_path('/FirmwareVersion', None)
         service.add_path('/Serial', None)
         service.add_path('/Connected', 1)
@@ -106,7 +106,6 @@ class Bridge(MqttGObjectBridge):
 
     def _on_connect(self, client, userdata, di, rc):
         self._client.subscribe('servicelocation/+/realtime', 0)
-        self._client.subscribe('servicelocation/+/channelConfig', 0)
 
 def main():
     parser = ArgumentParser(description=sys.argv[0])
